@@ -1,5 +1,7 @@
 #include <sqlite3.h>
 #include <pthread.h>
+#include <stdio.h>
+#include <string.h>
 
 
 pthread_mutex_t g_dbMtx = PTHREAD_MUTEX_INITIALIZER;
@@ -61,6 +63,7 @@ int findById(int _id, int *_index, unsigned char *ucOut, int *iLen)
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "findById Cannot open database: %s\n", sqlite3_errmsg(db));
 		sqlite3_close(db);
+		pthread_mutex_unlock(&g_dbMtx);
 		return -1;
 	}
 	char sql[1024] = {};
@@ -68,21 +71,29 @@ int findById(int _id, int *_index, unsigned char *ucOut, int *iLen)
 	ret = sqlite3_prepare_v2(db, sql, -1, &pStmt, 0);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "Failed to prepare statement\n");
+		sqlite3_finalize(pStmt);
 		sqlite3_close(db);
+		pthread_mutex_unlock(&g_dbMtx);
 		return -1;
 	}
 	ret = sqlite3_step(pStmt);
 	int iNum = 0;
 	iNum = sqlite3_column_int(pStmt, 0);
 	if (iNum==0) {
-		printf("not found\n");
+		printf("not found by id\n");
+		sqlite3_finalize(pStmt);
+		sqlite3_close(db);
+		pthread_mutex_unlock(&g_dbMtx);
 		return 0;
 	}
+	sqlite3_reset(pStmt);
 	sprintf(sql, "SELECT * FROM broadcast_data WHERE ID = %d;", _id);
 	ret = sqlite3_prepare_v2(db, sql, -1, &pStmt, 0);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "Failed to prepare statement\n");
+		sqlite3_finalize(pStmt);
 		sqlite3_close(db);
+		pthread_mutex_unlock(&g_dbMtx);
 		return -1;
 	}
 	ret = sqlite3_step(pStmt);
@@ -124,8 +135,8 @@ int insertToDB(unsigned char *pucRecvData)
 	unsigned char ucIdLow = tmp[39];
 	unsigned char ucIdHigh = tmp[42];
 	int id = 0;
-	id |= ucIdHigh;
-	id = (id << 8) | ucIdLow;
+	id |= ucIdLow;
+	id = (id << 8) | ucIdHigh;
 	int indx = tmp[41];
 	int type = tmp[38];
 	int num = tmp[40];
@@ -136,14 +147,24 @@ int insertToDB(unsigned char *pucRecvData)
 	ret = sqlite3_prepare_v2(db, sql, -1, &pStmt, 0);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "insertToDB Failed to prepare statement\n");
+		sqlite3_finalize(pStmt);
 		sqlite3_close(db);
+		pthread_mutex_unlock(&g_dbMtx);
 		return -1;
 	}
-	sqlite3_bind_blob(pStmt, 1, &tmp[43], dwLen, NULL);
-	sqlite3_step(pStmt);
+	ret = sqlite3_bind_blob(pStmt, 1, &tmp[43], dwLen, NULL);
+	printf("insert blob %d\n", ret);
+	ret = sqlite3_step(pStmt);
+	if (ret != SQLITE_DONE) {
+		printf("step error %d\n", ret);
+		sqlite3_finalize(pStmt);
+		sqlite3_close(db);
+		pthread_mutex_unlock(&g_dbMtx);
+		return -1;
+	}
 	sqlite3_finalize(pStmt);
 	sqlite3_close(db);
 	pthread_mutex_unlock(&g_dbMtx);
-
+	printf("insert success\n");
 	return 0;
 }
