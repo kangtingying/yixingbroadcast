@@ -156,7 +156,7 @@ int insertToDB(unsigned char *pucRecvData)
 	printf("insert blob %d\n", ret);
 	ret = sqlite3_step(pStmt);
 	if (ret != SQLITE_DONE) {
-		printf("step error %d\n", ret);
+		printf("insertToDB step error %d\n", ret);
 		sqlite3_finalize(pStmt);
 		sqlite3_close(db);
 		pthread_mutex_unlock(&g_dbMtx);
@@ -166,5 +166,111 @@ int insertToDB(unsigned char *pucRecvData)
 	sqlite3_close(db);
 	pthread_mutex_unlock(&g_dbMtx);
 	printf("insert success\n");
+	return 0;
+}
+
+/*
+**	return:0 exist -1:not exist	
+**
+*/
+
+int anotherPacketIsExist(unsigned char *_pucRecvData)
+{
+	sqlite3 *db;
+	sqlite3_stmt *pStmt;
+	pthread_mutex_lock(&g_dbMtx);
+	int ret = sqlite3_open("./broadcast.db", &db);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "insertToDB Cannot open database: %s\n", sqlite3_errmsg(db));
+		sqlite3_close(db);
+		return -1;
+	}
+	char sql[1024] = {};
+	unsigned char *tmp = _pucRecvData;
+	/*取得id的高字节和低字节的数据*/
+	unsigned char ucIdLow = tmp[39];
+	unsigned char ucIdHigh = tmp[42];
+	int id = 0;
+	id |= ucIdLow;
+	id = (id << 8) | ucIdHigh;
+	int indx = 0x03-tmp[41];
+	sprintf(sql, "select count(*) from broadcast_data WHERE ID=%d AND indx=%d;", id, indx);
+	ret = sqlite3_prepare_v2(db, sql, -1, &pStmt, 0);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "count Failed to prepare statement\n");
+		sqlite3_finalize(pStmt);
+		sqlite3_close(db);
+		pthread_mutex_unlock(&g_dbMtx);
+		return -1;
+	}
+	ret = sqlite3_step(pStmt);
+#if 0
+	if(ret != SQLITE_DONE) {
+		printf("anotherPacketIsExist step error %d\n", ret);
+		sqlite3_finalize(pStmt);
+		sqlite3_close(db);
+		pthread_mutex_unlock(&g_dbMtx);
+		return -1;
+	}
+#endif
+	if (sqlite3_column_int(pStmt, 0)>0) {
+		printf("anotherPacketIsExist\n");
+		sqlite3_finalize(pStmt);
+		sqlite3_close(db);
+		pthread_mutex_unlock(&g_dbMtx);
+		return 0;
+	}else {
+		printf("anotherPacket not exist\n");
+		sqlite3_finalize(pStmt);
+		sqlite3_close(db);
+		pthread_mutex_unlock(&g_dbMtx);
+		return -1;
+	}
+}
+
+/*
+**	get another packet by current data's ID and indx
+**	return: 0:success -1:failure
+*/
+
+int getAnotherPacketData(unsigned char *_pucRecvData, unsigned char *pucBlobData, int *bloblLen)
+{
+	sqlite3 *db;
+	sqlite3_stmt *pStmt;
+	pthread_mutex_lock(&g_dbMtx);
+	int ret = sqlite3_open("./broadcast.db", &db);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "findById Cannot open database: %s\n", sqlite3_errmsg(db));
+		sqlite3_close(db);
+		pthread_mutex_unlock(&g_dbMtx);
+		return -1;
+	}
+	char sql[1024] = {};
+	unsigned char *tmp = _pucRecvData;
+	/*取得id的高字节和低字节的数据*/
+	unsigned char ucIdLow = tmp[39];
+	unsigned char ucIdHigh = tmp[42];
+	int id = 0;
+	id |= ucIdLow;
+	id = (id << 8) | ucIdHigh;
+	int indx = 0x03 - tmp[41];
+	sprintf(sql, "select * from broadcast_data WHERE ID=%d AND indx=%d;", id, indx);
+	ret = sqlite3_prepare_v2(db, sql, -1, &pStmt, 0);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "Failed to prepare statement\n");
+		sqlite3_finalize(pStmt);
+		sqlite3_close(db);
+		pthread_mutex_unlock(&g_dbMtx);
+		return -1;
+	}
+	ret = sqlite3_step(pStmt);
+	const void * pReadBolbData = sqlite3_column_blob(pStmt, 4);
+	*bloblLen = sqlite3_column_bytes(pStmt, 4);
+	printf("read blob len =%d\n", *bloblLen);
+	memcpy(pucBlobData, pReadBolbData, *bloblLen);
+	sqlite3_finalize(pStmt);
+	sqlite3_close(db);
+	pthread_mutex_unlock(&g_dbMtx);
+
 	return 0;
 }

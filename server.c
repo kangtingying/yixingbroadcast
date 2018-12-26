@@ -24,6 +24,7 @@ static void *pthread_handle(void *arg)
 		printf("%02x ", pucTmp[i]);
 	}
 	printf("\n");
+#if 0
 	printf("The thread's tid is %d\n", syscall(SYS_gettid));
 	//解析数据提取交易id
 	int id = 0;
@@ -57,6 +58,32 @@ static void *pthread_handle(void *arg)
 	}
 
 	pthread_exit((void *)0);
+#endif
+	//write received data to db
+	if (0 != insertToDB(pucTmp)) {
+		printf("write error\n");
+		pthread_exit((void *)(-1));
+	}
+	//judge another packet is exist
+	if (0 != anotherPacketIsExist(pucTmp)) {
+		printf("packet is not exist\n");
+		pthread_exit((void *)(1));
+	}
+	//合并
+	unsigned char pucOut[1024] = {};
+	int iLen = 0;
+	char toBroadcast[1024] = {};
+	int outLen = 0;
+	getAnotherPacketData(pucTmp, pucOut, &iLen);
+	packetData(pucTmp, pucOut, iLen, toBroadcast, &outLen);
+	char pcStr[1024] = { 0 };
+	convetHexToStr(toBroadcast, outLen, pcStr);
+	//广播数据
+	char cmd[1024] = {};
+	sprintf(cmd, "./qtum-cli -testnet sendrawtransaction %s", pcStr);
+	printf("cmd =%s.\n", cmd);
+	system(cmd);
+	pthread_exit((void *)(0));
 }
 
 /*
