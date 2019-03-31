@@ -9,6 +9,7 @@
 //test2
 //test3
 //test4
+//local add
 int initDB();
 int findById(int _id, int *_index, unsigned char *ucOut, int *iLen);
 //int insertToDB(unsigned char *pucRecvData);
